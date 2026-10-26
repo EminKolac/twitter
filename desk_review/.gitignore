@@ -1,0 +1,6 @@
+desk/data/
+desk/alerts/
+desk/reports/
+desk/logs/
+__pycache__/
+*.pyc
