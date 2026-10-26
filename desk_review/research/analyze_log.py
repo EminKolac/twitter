@@ -92,6 +92,7 @@ def main(root):
     print(f"# Paper desk log analysis — {root}\n\nclosed trades: {n}")
     if not n:
         return
+    c = c.sort_values("opened_ms", kind="stable")  # one stable order for every per-half number
     c["half"] = (c.opened_ms.rank(method="first") > n // 2).map({False: "H1", True: "H2"})
     mix = c.exit_reason.value_counts().to_dict()
     print("exit mix:", mix)
@@ -147,8 +148,7 @@ def main(root):
     if len(multi):
         co = multi.groupby("opened_ms").apply(lambda g: (g.exit_reason == "STOP").sum() >= 2).mean()
         print(f"    same-candle clusters where >= 2 legs hit the full STOP: {co:.0%} of {multi.opened_ms.nunique()} clusters")
-    half = c.sort_values("opened_ms")
-    h1, h2 = half.iloc[: n // 2], half.iloc[n // 2:]
+    h1, h2 = c[c.half == "H1"], c[c.half == "H2"]
     print(f"\nfirst half E {h1.R.mean():+.3f}R (n={len(h1)}) | second half E {h2.R.mean():+.3f}R (n={len(h2)})")
 
     # ---------- 3. contamination from bugs found in review ----------
@@ -173,13 +173,17 @@ def main(root):
     cl_ms = dict(zip(c.trade_id, (pd.to_datetime(c.closed_at.str.replace(" UTC", ""), utc=True, errors="coerce")
                                   - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(milliseconds=1)))
     for r in runs:
-        gone = {e.get("trade_id") for e in r.get("exits", [])}
+        # exits booked at or before the run's 1D close were walked BEFORE the risk officer ran (daily block)
+        d1c = r.get("closes_processed", {}).get("1d")
+        d1_ms = (pd.Timestamp(d1c.replace(" UTC", ""), tz="UTC") - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(
+            milliseconds=1) if d1c else -1
+        gone = {e.get("trade_id") for e in r.get("exits", []) if cl_ms.get(e.get("trade_id"), -1) > d1_ms}
         for al in r.get("new_alerts", []):
             a = adds[adds.trade_id == al.get("plan_id")]
             if not len(a):
                 continue
             a = a.iloc[0]
-            if any(b.coin == a.coin and b.add_number < a.add_number and b.opened_ms < a.opened_ms
+            if any(b.coin == a.coin and b.trade_id != a.trade_id and b.opened_ms < a.opened_ms
                    and cl_ms.get(b.trade_id, float("inf")) <= a.opened_ms
                    for b in c[c.trade_id.isin(gone)].itertuples()):
                 stale.add(a.trade_id)

@@ -105,12 +105,27 @@ watchlist dışı) ve **temizlenmiş** örneklemin skorunu verir. Asıl başlang
 - Çıkış kuralları aynı girişler üzerinde **eşli** karşılaştırılabildiği için çok daha az işlemle karar verilebilir.
   `replay_be.py` bu yüzden ilk adım.
 
-## 8. Dosyalar
+## 8. Yama seti nasıl doğrulandı
+
+- Hatalar önce orijinal kodda sentetik senaryolarla tekrar üretildi, sonra yamalı kodda kapandığı gösterildi.
+  Kapsanan senaryolar: catch-up, çalışma sırası, zone tekrarı, watchlist dışı add, add sızıntısı, gap dolumu, kaçırılan
+  EXIT NOW, 7 coin'lik aynı mum kümesi ve auditor WR.
+- Varsayılan ayarlarla orijinal ve yamalı masa üç sentetik piyasada saat saat koşturuldu. Her açık değişiklik tek tek
+  geri alınınca iki çıktı arasında **sıfır fark** kalıyor. Yani tüm farklar kasıtlı değişikliklerden geliyor.
+- Kapalı bayraklar varsayılanda birebir no-op. `confirm_1h` 200 bin rastgele mumda, BE tetikleyicisi 100 bin örnekte
+  orijinalle aynı sonucu veriyor.
+- Orijinal masanın yazdığı `data/` klasörüyle yamalı kodun devam ettiği (geçiş) senaryosu hatasız çalışıyor.
+- İki tur bağımsız test yapıldı. İlk tur 22 kusur buldu (desk'te 10, araştırma betiklerinde 12), ikinci tur 5. Hepsi
+  düzeltildi ve yeniden doğrulandı.
+- `analyze_log.py` ve `replay_be.py` sentetik loglarda bağımsız hesaplamayla karşılaştırıldı (pandas 2.2 ve 3.0).
+  `replay_be.py`'nin “P0 as logged” varyantı masanın kendi çıkışlarını işlem işlem birebir üretiyor.
+
+## 9. Dosyalar
 
 - `desk/` — yamalı kod (doğruluk düzeltmeleri açık, hipotezler kapalı) ve güncel `DESK_RULES.md`.
   `desk/desklib/charts.py` bir **taslak (stub)**: orijinal pakette yoktu, kendi dosyanızın üzerine kopyalamayın.
   Eski `data/` klasörüyle çalışır: yeni sütunlar boş başlar, açık pozisyonların MFE/MAE'si geçmiş mumlardan doldurulur.
-- `desk.patch` — orijinale göre birleşik diff
+- `desk.patch` — orijinale göre birleşik diff (`patch -p1 < desk.patch`, orijinal desk klasöründe; temiz uygulandığı test edildi)
 - `research/analyze_log.py`, `research/replay_be.py` — salt-okunur analiz araçları
 - Eşikler (`THRESHOLDS`) değişmedi. Win rate ve DD **tanımları** yalnızca sıkılaştı. Kilitli metrik tanımı olduğu için bu
   iki değişikliği yine de siz onaylayın.

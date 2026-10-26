@@ -71,6 +71,8 @@ def confirm(client, hours):
         zs.sort(key=lambda z: -f(z["zone_top"]))
         try:
             d1 = client.klines(coin, "1h", 300)
+            # zones can be ~22 days old; 300 bars cover 12.5
+            hist = client.klines(coin, "1h", 720) if CFG["ZONE_BREAK_ON_1H_CLOSE"] else None
         except Exception as e:
             failed.append(coin)
             log.warning("confirm %s failed: %s", coin, e)
@@ -92,7 +94,6 @@ def confirm(client, hours):
                         z["status"] = "TESTED"
             if CFG["ZONE_BREAK_ON_1H_CLOSE"]:
                 # a closed 1H candle above zone top (before this one) -> zone no longer confirms
-                hist = client.klines(coin, "1h", 720)  # zones can be ~22 days old; 300 bars cover 12.5
                 prior = hist[hist.open_time < h_ms]
                 live = [z for z in live
                         if not (prior[prior.open_time >= int(f(z["formed_ms"]))].close > f(z["zone_top"])).any()]

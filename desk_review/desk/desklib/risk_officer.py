@@ -82,7 +82,8 @@ def run(client=None, latest_1h=None):
         rr_net = (entry - tp - (CFG["TAKER_FEE"] + sb) * (entry + tp)) / (dist + cost) if dist > 0 else 0
         late_h = (latest_1h - c_ms) / H1 if latest_1h is not None else 0.0
         age = flip_age_days(wl.get(coin, {}), c_ms)
-        btc_x = btc_impulse_x(client, c_ms) if client is not None and not is_add and late_h <= 0 else None
+        btc_x = (btc_impulse_x(client, c_ms) if client is not None and not is_add
+                 and (late_h <= 0 or not CFG["TRADE_LATEST_HOUR_ONLY"]) else None)
         open_risk = sum(f(p.get("risk_pct")) for p in pos if p.get("be_moved") != "True")
         plan.update({"rr_net": round(rr_net, 3), "cost_share": round(cost_share, 4),
                      "stop_atr": round(dist / f(s["atr_1h"]), 3) if f(s["atr_1h"]) > 0 else "",
