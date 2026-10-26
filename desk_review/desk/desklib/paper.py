@@ -1,6 +1,6 @@
 """Paper broker (simulation only). Fills at the confirmation 1H close; fees (0.05% taker per side) and slippage
 are journaled on separate lines. Manages stops / TP / breakeven on closed 1H candles."""
-from .store import CFG, rows, save, iso, now_ms, f, journal, alert, fmt, H1
+from .store import CFG, rows, save, iso, now_ms, f, journal, alert, fmt, H1, D1
 from .risk_officer import slip_bps
 
 
@@ -97,6 +97,10 @@ def manage(client, until_ms):
         entry, R = f(p["entry"]), f(p["initial_stop"]) - f(p["entry"])
         trigger = be_trigger_price(p)
         mfe, mae = f(p.get("mfe_r")), f(p.get("mae_r"))  # excursions in price-R (stop distance units)
+        if p.get("mfe_r") in (None, ""):  # position opened before excursions were recorded: seed from walked candles
+            past = d1[(d1.open_time >= int(f(p["opened_ms"]))) & (d1.open_time <= int(f(p["last_checked_ms"])))]
+            if len(past):
+                mfe, mae = max(0.0, (entry - past.low.min()) / R), max(0.0, (past.high.max() - entry) / R)
         for h in new.itertuples():
             stop, tp = f(p["stop"]), f(p["tp"])
             if h.high >= stop:  # conservative: stop checked before TP within the same candle
@@ -113,6 +117,15 @@ def manage(client, until_ms):
                 exits.append(close(p, tp, "TP", iso(h.open_time + H1)))
                 break
             mfe = max(mfe, (entry - h.low) / R)
+            # 1D close above anchor -> EXIT NOW, in event order (also after downtime or a 1D data error)
+            if (int(h.open_time) + H1) % D1 == 0 and f(p["anchor_high"]) and h.close > f(p["anchor_high"]):
+                ts = iso(h.open_time + H1)
+                p.update({"mfe_r": round(mfe, 3), "mae_r": round(mae, 3)})
+                alert(f"## 🚨 EXIT NOW — {p['coin']} — 1D close {fmt(h.close)} > anchor {fmt(p['anchor_high'])} ({ts})\n"
+                      f"- Trade `{p['trade_id']}`: rule = close immediately. Paper position closed at the 1D close.\n"
+                      f"- No real order placed.")
+                exits.append(close(p, float(h.close), "EXIT_NOW_1D_CLOSE_ABOVE_ANCHOR", ts))
+                break
             armed = {"wick": h.low <= trigger, "close": h.close <= trigger}.get(CFG["BE_MODE"], False)
             if p["be_moved"] != "True" and armed:
                 p["stop"] = entry * (1 - 2 * CFG["TAKER_FEE"] - 2 * f(p["slip_bps"]) / 1e4)

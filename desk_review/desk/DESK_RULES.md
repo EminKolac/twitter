@@ -52,8 +52,8 @@ or close in the lower part of its range), `INSIDE_MAX_DEPTH` (BEARISH_INSIDE mus
 
 ## 5. Risk
 - Initial entry risk **1%** of current paper balance. **Add 0.5%** only if the previous entry on that coin is at
-  breakeven (stop already moved to BE). Max 2 adds per coin **per flip (same anchor), open or closed** — closed legs
-  no longer free up add slots; add numbers are unique per flip. Max 5 coins open.
+  breakeven (stop already moved to BE). Max 2 adds per coin: **every open leg counts, and closed legs of the same flip
+  (anchor within 0.5%) count too** — closed legs no longer free up add slots; add numbers are unique. Max 5 coins open.
 - **Correlated entries:** max **2 new coins per 1H confirmation candle**; the risk of open entries whose stop is not yet
   at breakeven may not exceed **3%** of balance (in-batch approvals count).
 - **Only the newest closed 1H candle is tradable.** Hours replayed after downtime are still confirmed (the zone is used)
@@ -68,9 +68,10 @@ or close in the lower part of its range), `INSIDE_MAX_DEPTH` (BEARISH_INSIDE mus
   also disables adds, which require BE). `BE_TRIGGER_UNITS` = `price` (current: 1 × stop distance) | `net` (+1R after
   all costs, the same R the journal reports). Change only after the BE replay test (see review README).
 - Optional, OFF by default (test first): `MAX_COST_SHARE` (reject when round-trip costs exceed this share of 1R),
-  `MIN_RR_NET` (RR net of costs), `MAX_FLIP_AGE_DAYS`, `BTC_IMPULSE_ATR` (no new coins after a BTC 3h rise > k × ATR).
+  `MIN_RR_NET` (RR net of costs), `MAX_FLIP_AGE_DAYS` (new coins only; adds exempt), `BTC_IMPULSE_ATR` (no new coins
+  after a BTC 3h rise > k × ATR).
 - Every plan logs its decision-time features: kind, rr_net, cost_share, stop/ATR, same-candle cluster size, flip age,
-  BTC 3h impulse, signal lateness.
+  BTC 3h impulse (initial entries on the newest hour only), signal lateness.
 
 ## 6. Exits
 - **1D close above anchor → EXIT NOW** (paper closes at that daily close).
@@ -80,8 +81,9 @@ or close in the lower part of its range), `INSIDE_MAX_DEPTH` (BEARISH_INSIDE mus
 - Stop / TP are walked on closed 1H candles; if both are hit in the same candle, **stop is assumed first**.
 - A stop the candle **opens through** fills at that candle's open, not at the stop price (e.g. BE armed on a wick of a
   candle that closed back above the BE level). Positions record MFE / MAE (in stop-distance units) and the BE time.
-- Every daily run re-checks all 1D closes since the position opened, so an EXIT NOW missed by a data error is applied
-  at the first close above the anchor.
+- **EXIT NOW is applied in event order** while walking 1H candles: the 1H candle that ends at 00:00 UTC closes the day,
+  and if it closes above the anchor the position exits there, before later candles can hit TP or the stop (also after
+  downtime or a 1D data error). The daily exit clerk re-checks the last 30 daily closes as a backstop.
 
 ## 7. Execution / paper fills
 - Never executes. Each approved plan → alert in `alerts/pending_alerts.md` + chart PNG; paper mode auto-records TAKEN.

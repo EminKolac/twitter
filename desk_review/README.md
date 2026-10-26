@@ -52,8 +52,8 @@ Hepsi sentetik mumlarla gerçek kod üzerinde tekrar üretildi. Etki sütunu yö
 | 3 | **Gap-through BE dolumu.** BE fitil ile kuruluyor ama mum BE'nin üstünde kapanmış olabiliyor. Sonraki mum stopun üstünde açılıyor, yine de BE fiyatından (~0R) dolduruluyor. Gerçekte açılışta (−0.1…−0.5R) dolar. | `paper.py` | BE_STOP'ları ve WR'yi **yukarı** iter | `GAP_AWARE_FILLS`: dolum = max(stop, açılış) |
 | 4 | **Zone tekrar işlem görüyor.** `confirmed` bayrağı yalnızca bir önceki zones.csv'den taşınıyor. Coin watchlist'ten çıkıp geri girince aynı zone (genelde zaten stop olmuş olan) yeniden işlem açıyor. Kural “her zone bir kez” diyor. | `cartographer.py` | küçük, olumsuz | `signals.csv`'de görülen zone_id bir daha onaylanmaz |
 | 5 | **Watchlist dışı coin'e add/giriş.** Açık pozisyon için tutulan zone'lar sinyal üretiyor. Başlangıç noktası 10 gün geri çekildiği için TP flip öncesi diplere kayıyor, RR şişiyor ve add onaylanıyor. | `cartographer.py`, `risk_officer.py` | add'ler aleyhine | yalnızca güncel watchlist'teki coin'ler sinyal üretir ve add alır |
-| 6 | **MAX_ADDS sızıntısı.** Yalnızca *açık* bacakları sayıyor; bacaklar BE'de kapandıkça aynı flip'e sınırsız add açılabiliyor, add_number tekrar ediyor. | `risk_officer.py` | add aleyhine | flip (aynı anchor) başına, açık+kapalı sayım; benzersiz add_number |
-| 7 | **Kaçırılan EXIT NOW.** Günlük veri hatasında imleç yine ilerliyor ve kural yalnızca son 1D mumuna bakıyor. Anchor üstü kapanış kalıcı olarak kaçabiliyor. | `exit_clerk.py` | nadir | açılıştan beri tüm 1D kapanışları kontrol edilir |
+| 6 | **MAX_ADDS sızıntısı.** Yalnızca *açık* bacakları sayıyor; bacaklar BE'de kapandıkça aynı flip'e sınırsız add açılabiliyor, add_number tekrar ediyor. | `risk_officer.py` | add aleyhine | tüm açık bacaklar + aynı flip'in (anchor ±%0.5) kapanmış bacakları sayılır; benzersiz add_number |
+| 7 | **Kaçırılan / geciken EXIT NOW.** Kesinti ya da günlük veri hatasında anchor üstü kapanış kaçabiliyor. Sonraki 1H mumlarda TP gelirse kural yerine TP yazılıyor (iyimser). | `paper.py`, `exit_clerk.py` | nadir, iyimser | EXIT NOW 1H yürüyüşünde olay sırasıyla uygulanır (00:00 UTC'de biten 1H mum = günlük kapanış). exit_clerk yedek kontrol olarak kalır |
 | 8 | **WR ölçümü** (yukarıdaki §1.2). | `auditor.py` | kapı PASS → **FAIL** | kazanç = R ≥ +0.10 (eskisinin alt kümesi, yalnızca sıkılaştırır); eski oran raporda bağlam olarak kalır |
 | 9 | **DD yalnızca realize.** Açık korelasyonlu pozisyonların geri verdiği kâr görünmüyor. | `auditor.py`, `run_desk.py` | DD kapısı **iyimser** | her çalıştırmada MTM equity kaydı (`equity.csv`); kapı realize ve MTM'in kötüsü |
 | 10 | **Korelasyonlu girişler.** Tek 1H mumda 5 coin × %1 = %5 risk açılabiliyor (tekrar üretildi). Kümelenmiş modelde P(DD > %20) %5 → %19 (3'lü) → %37 (5'li). 15.9% PASS kırılgan. | `risk_officer.py` | DD | mum başına en fazla 2 yeni coin; BE'ye gelmemiş açık risk ≤ %3 |
@@ -107,7 +107,9 @@ watchlist dışı) ve **temizlenmiş** örneklemin skorunu verir. Asıl başlang
 
 ## 8. Dosyalar
 
-- `desk/` — yamalı kod (doğruluk düzeltmeleri açık, hipotezler kapalı) ve güncel `DESK_RULES.md`
+- `desk/` — yamalı kod (doğruluk düzeltmeleri açık, hipotezler kapalı) ve güncel `DESK_RULES.md`.
+  `desk/desklib/charts.py` bir **taslak (stub)**: orijinal pakette yoktu, kendi dosyanızın üzerine kopyalamayın.
+  Eski `data/` klasörüyle çalışır: yeni sütunlar boş başlar, açık pozisyonların MFE/MAE'si geçmiş mumlardan doldurulur.
 - `desk.patch` — orijinale göre birleşik diff
 - `research/analyze_log.py`, `research/replay_be.py` — salt-okunur analiz araçları
 - Eşikler (`THRESHOLDS`) değişmedi. Win rate ve DD **tanımları** yalnızca sıkılaştı. Kilitli metrik tanımı olduğu için bu

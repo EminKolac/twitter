@@ -141,8 +141,8 @@ def main(root):
     c = pos[pos.status == "CLOSED"].copy()
     for col in ("entry", "initial_stop", "tp", "qty", "slip_bps", "entry_costs", "risk_usd", "r_multiple",
                 "opened_ms", "add_number"):
-        c[col] = pd.to_numeric(c[col], errors="coerce")
-    c["anchor_high"] = pd.to_numeric(c.anchor_high, errors="coerce").fillna(0.0)
+        c[col] = c[col].map(lambda x: float(x) if x != "" else float("nan"))  # same parser as the desk's f()
+    c["anchor_high"] = c.anchor_high.map(lambda x: float(x) if x != "" else 0.0)
     c["hour"] = c.opened_ms // H1
     res = {v: [] for v in VARIANTS}
     for coin, g in c.groupby("coin"):
@@ -163,7 +163,8 @@ def main(root):
     p0 = df["P0 as logged"]
     if p0.empty:
         sys.exit("no trades replayed (no market data?)")
-    ok = ((p0.why == p0.logged) & ((p0.R - p0.logged_R).abs() < 0.02)).mean()
+    logged = p0.logged.where(~p0.logged.str.startswith("EXIT_NOW"), "EXIT_NOW")
+    ok = ((p0.why == logged) & ((p0.R - p0.logged_R).abs() < 0.02)).mean()
     print(f"# Exit replay — {len(p0)} closed trades\nreconciliation of P0 with the log: {ok:.0%} match "
           f"(< 90% means candles differ from the desk's source; read results with care)\n")
     print("| variant | E all | ΔE vs P0 [95% CI, clustered by entry hour] | E initial only | TP/STOP/BE/other | open |")
@@ -171,19 +172,21 @@ def main(root):
     for v, d in df.items():
         delta = (d.R.values - p0.R.values).tolist()
         lo, hi = boot_mean_ci(delta, p0.hour.tolist())
-        ini = d[d.add == 0]
+        ini = d[d["add"] == 0]
         mix = d.why.value_counts()
         print(f"| {v} | {d.R.mean():+.3f} | {sum(delta) / len(delta):+.3f} [{lo:+.3f}, {hi:+.3f}] | {ini.R.mean():+.3f} | "
               f"{mix.get('TP', 0)}/{mix.get('STOP', 0)}/{mix.get('BE_STOP', 0)}/{mix.get('EXIT_NOW', 0)} | "
               f"{mix.get('OPEN', 0)} |")
     be_ids = p0[p0.logged == "BE_STOP"].trade_id
-    nobe = df["no BE"][df["no BE"].trade_id.isin(be_ids)]
+    nobe_all = df["no BE"][df["no BE"].trade_id.isin(be_ids)]
+    nobe = nobe_all[nobe_all.why != "OPEN"]  # unresolved at the data end: a mark, not an outcome
     lo, hi = boot_mean_ci(nobe.R.tolist(), nobe.hour.tolist())
     m = nobe.R.mean()
     verdict = ("continuation after +1R: forward-test a later / close-based BE" if m >= 0.25 else
                "edge decays after +1R: keep BE, exits cannot reach +0.4R, work on entries" if m <= 0 else
                "inconclusive: collect more trades")
-    print(f"\n## Decisive test: the {len(nobe)} logged BE_STOP trades replayed with their original stop")
+    print(f"\n## Decisive test: the {len(nobe)} logged BE_STOP trades replayed with their original stop "
+          f"({len(nobe_all) - len(nobe)} still open at the data end, excluded; re-run later if that is large)")
     print(f"mean R {m:+.3f} [95% CI {lo:+.3f}, {hi:+.3f}] -> {verdict}")
     g = df["P0 + gap-aware fills"]
     bad = g[(g.logged == "BE_STOP") & (g.R < -0.05)]

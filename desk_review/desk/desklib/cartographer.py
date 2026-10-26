@@ -59,9 +59,10 @@ def confirm(client, hours):
     zones = rows("zones")
     # zones kept only to manage an open position (coin off the watchlist) never generate signals
     wl = {w["coin"] for w in rows("watchlist")}
+    used = {s["zone_id"] for s in rows("signals")}  # zones that already signalled never confirm again
     by_coin = {}
     for z in zones:
-        if z["status"] != "INVALIDATED" and not z["confirmed"] and z["coin"] in wl:
+        if z["status"] != "INVALIDATED" and not z["confirmed"] and z["coin"] in wl and z["zone_id"] not in used:
             by_coin.setdefault(z["coin"], []).append(z)
     seen = {r["signal_id"] for r in rows("signals")}
     client.prefetch([(c, "1h", 300) for c in by_coin])
@@ -91,7 +92,8 @@ def confirm(client, hours):
                         z["status"] = "TESTED"
             if CFG["ZONE_BREAK_ON_1H_CLOSE"]:
                 # a closed 1H candle above zone top (before this one) -> zone no longer confirms
-                prior = d1.iloc[:i]
+                hist = client.klines(coin, "1h", 720)  # zones can be ~22 days old; 300 bars cover 12.5
+                prior = hist[hist.open_time < h_ms]
                 live = [z for z in live
                         if not (prior[prior.open_time >= int(f(z["formed_ms"]))].close > f(z["zone_top"])).any()]
             touched = [z for z in live if h.high >= f(z["zone_bottom"])

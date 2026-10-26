@@ -72,7 +72,7 @@ def split(df, key, title, rule=""):
     print(f"\n### {title}")
     if rule:
         print(f"    decision rule: {rule}")
-    g = df.groupby(key, dropna=False)
+    g = df.groupby([key, "half"], dropna=False, observed=False)  # each bucket per half of the log
     out = g.agg(n=("R", "size"), meanR=("R", "mean"), TP=("exit_reason", lambda x: (x == "TP").mean()),
                 STOP=("exit_reason", lambda x: (x == "STOP").mean()),
                 BE=("exit_reason", lambda x: (x == "BE_STOP").mean()))
@@ -90,6 +90,9 @@ def main(root):
     c["hour"] = (c.opened_ms // 3_600_000).astype("Int64")
     n = len(c)
     print(f"# Paper desk log analysis — {root}\n\nclosed trades: {n}")
+    if not n:
+        return
+    c["half"] = (c.opened_ms.rank(method="first") > n // 2).map({False: "H1", True: "H2"})
     mix = c.exit_reason.value_counts().to_dict()
     print("exit mix:", mix)
 
@@ -156,7 +159,8 @@ def main(root):
         d2 = dec[dec.decision == "TAKEN"].copy()
         d2["sig"] = d2.plan_id.str[2:]
         d2["candle_close"] = d2.sig.map(lambda s: int(float(st[s])) + 3_600_000 if s in st else None)
-        d2["alert_ms"] = pd.to_datetime(d2.alert_time.str.replace(" UTC", ""), utc=True, errors="coerce").astype("int64") // 10**6
+        ts = pd.to_datetime(d2.alert_time.str.replace(" UTC", ""), utc=True, errors="coerce")
+        d2["alert_ms"] = (ts - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(milliseconds=1)  # unit-safe (pandas 2 and 3)
         late = d2[(d2.alert_ms - d2.candle_close) > 3_600_000].plan_id
         flagged["catch-up lookahead (alert > 1h after the candle closed)"] = set(late)
     adds = c[c.add_number > 0]
@@ -165,17 +169,31 @@ def main(root):
         base = c[(c.coin == a.coin) & (c.add_number < a.add_number) & (c.closed_at == a.opened_at)]
         if len(base):
             stale.add(a.trade_id)
-    flagged["stale-state add (its base closed on the add's own candle)"] = stale
+    # same run: an add sized on the newest candle against a base that the run's (late) walk closed earlier
+    cl_ms = dict(zip(c.trade_id, (pd.to_datetime(c.closed_at.str.replace(" UTC", ""), utc=True, errors="coerce")
+                                  - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(milliseconds=1)))
+    for r in runs:
+        gone = {e.get("trade_id") for e in r.get("exits", [])}
+        for al in r.get("new_alerts", []):
+            a = adds[adds.trade_id == al.get("plan_id")]
+            if not len(a):
+                continue
+            a = a.iloc[0]
+            if any(b.coin == a.coin and b.add_number < a.add_number and b.opened_ms < a.opened_ms
+                   and cl_ms.get(b.trade_id, float("inf")) <= a.opened_ms
+                   for b in c[c.trade_id.isin(gone)].itertuples()):
+                stale.add(a.trade_id)
+    flagged["stale-state add (its base closed before the add was sized)"] = stale
     if not sig.empty:
         dup = sig.groupby("zone_id").signal_id.apply(list)
         retr = {"P-" + s for ids in dup[dup.map(len) > 1] for s in ids[1:]}
         flagged["zone traded again after re-creation"] = retr & set(c.trade_id)
     leak = set()
-    for (coin, anc), g in c.groupby(["coin", "anchor_high"]):
+    allp = pos.assign(add_number=num(pos, "add_number"), opened_ms=num(pos, "opened_ms"))
+    for (coin, anc), g in allp.groupby(["coin", "anchor_high"]):  # open AND closed adds of the flip
         a = g[g.add_number > 0].sort_values("opened_ms")
         leak |= set(a.trade_id.iloc[MAX_ADDS:])
-        leak |= set(a[a.add_number.duplicated()].trade_id)
-    flagged["add-cap leak (> 2 adds per flip, or reused add_number)"] = leak
+    flagged["add-cap leak (> 2 adds on one flip)"] = leak
     if runs:
         off = set()
         for r in runs:

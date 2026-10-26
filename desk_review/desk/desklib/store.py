@@ -21,6 +21,7 @@ CFG = {
     "RISK_PCT": 1.0,              # % of paper balance per initial entry
     "ADD_RISK_PCT": 0.5,          # % per add (only when previous entry on coin is at breakeven)
     "MAX_ADDS": 2,                # max adds per coin on top of the initial entry
+    "FLIP_ANCHOR_TOL": 0.005,     # closed legs count toward MAX_ADDS when their anchor is within 0.5% (same flip)
     "MAX_OPEN_COINS": 5,          # max coins with open paper positions
     "MAX_LEVERAGE": 5.0,          # per-position notional cap = 5x paper balance
     "MAX_GROSS_LEVERAGE": 10.0,   # all open notional cap = 10x paper balance
@@ -57,7 +58,7 @@ CFG = {
     "MIN_PEN_FRAC": 0.0,          # >0: the wick must reach this fraction into the zone to count as a test
     "REJECT_MAX_CLOSE_LOC": 1.0,  # <1: REJECT needs a red candle or close in the lower part of its range
     "INSIDE_MAX_DEPTH": 1.0,      # <1: BEARISH_INSIDE must close in the lower part of the zone
-    "MAX_FLIP_AGE_DAYS": 0,       # >0: no new entries when the flip's C3 is older than this
+    "MAX_FLIP_AGE_DAYS": 0,       # >0: no new coins (initial entries; adds exempt) when the flip's C3 is older
 }
 
 # ---- LOCKED auditor thresholds. Never changed by code. ----

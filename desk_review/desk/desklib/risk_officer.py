@@ -12,8 +12,14 @@ def slip_bps(coin):
 
 def btc_impulse_x(client, h_ms):
     """(BTC close[h] - close[h-3]) / ATR14(1H) on candle h, using closes up to h only. None if unavailable."""
+    if getattr(client, "_btc_unavailable", False):  # one failed fetch per run is enough
+        return None
     try:
         d = client.klines("BTCUSDT", "1h", 60)
+    except Exception:
+        client._btc_unavailable = True
+        return None
+    try:
         i = int(d.index[d.open_time == h_ms][0])
         if i < 17:
             return None
@@ -54,10 +60,12 @@ def run(client=None, latest_1h=None):
         entry, stop, tp = f(s["close"]), f(s["stop_level"]), f(s["impulse_low"])
         open_coin = sorted([p for p in pos if p["coin"] == coin], key=lambda p: int(f(p["add_number"])))
         is_add = bool(open_coin)
-        # legs of this coin's current flip (same anchor), open or closed, incl. approvals earlier in this batch
+        # legs counted against MAX_ADDS: every open leg on the coin (incl. approvals earlier in this batch), plus
+        # closed legs of the same flip (anchor within FLIP_ANCHOR_TOL: data sources differ by a tick)
         anchor = f(s["anchor_high"]) or (f(open_coin[0].get("anchor_high")) if open_coin else 0.0)
         legs = [p for p in allpos + [q for q in pos if "trade_id" not in q]
-                if p["coin"] == coin and anchor and abs(f(p.get("anchor_high")) - anchor) <= 1e-9 * anchor]
+                if p["coin"] == coin and (p.get("status", "OPEN") == "OPEN" or (
+                    anchor and abs(f(p.get("anchor_high")) - anchor) <= CFG["FLIP_ANCHOR_TOL"] * anchor))]
         adds_done = sum(int(f(p["add_number"])) > 0 for p in legs)
         add_no = max([int(f(p["add_number"])) for p in legs] + [0]) + 1 if is_add else 0
         risk_pct = CFG["RISK_PCT"] if not is_add else CFG["ADD_RISK_PCT"]
@@ -74,7 +82,7 @@ def run(client=None, latest_1h=None):
         rr_net = (entry - tp - (CFG["TAKER_FEE"] + sb) * (entry + tp)) / (dist + cost) if dist > 0 else 0
         late_h = (latest_1h - c_ms) / H1 if latest_1h is not None else 0.0
         age = flip_age_days(wl.get(coin, {}), c_ms)
-        btc_x = btc_impulse_x(client, c_ms) if client is not None and not is_add else None
+        btc_x = btc_impulse_x(client, c_ms) if client is not None and not is_add and late_h <= 0 else None
         open_risk = sum(f(p.get("risk_pct")) for p in pos if p.get("be_moved") != "True")
         plan.update({"rr_net": round(rr_net, 3), "cost_share": round(cost_share, 4),
                      "stop_atr": round(dist / f(s["atr_1h"]), 3) if f(s["atr_1h"]) > 0 else "",

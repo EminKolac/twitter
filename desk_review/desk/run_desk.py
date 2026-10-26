@@ -123,11 +123,17 @@ def main():
                           "unrealized_r": round(rr, 2) if rr is not None else None})
     # mark-to-market equity point (realized balance + open P&L at the last 1H close) for the auditor's MTM drawdown;
     # unrealized() deducts entry costs that the balance already holds, which roughly stands in for exit costs
-    if all(o["unrealized_usdt"] is not None for o in opens):
-        bal = store.balance()
-        unr = sum(o["unrealized_usdt"] for o in opens)
-        store.append("equity", [{"ts": iso(now), "balance": round(bal, 4), "unrealized": round(unr, 4),
-                                 "equity": round(bal + unr, 4), "open_positions": len(opens)}])
+    # (a position that cannot be priced is marked at its current stop, so the series never silently stops)
+    marks = []
+    for p in rows("positions"):
+        if p["status"] == "OPEN":
+            o = next((o for o in opens if o["trade_id"] == p["trade_id"]), {})
+            marks.append(o["unrealized_usdt"] if o.get("unrealized_usdt") is not None else
+                         (f(p["entry"]) - f(p["stop"])) * f(p["qty"]) - f(p["entry_costs"]))
+    bal = store.balance()
+    unr = sum(marks)
+    store.append("equity", [{"ts": iso(now), "balance": round(bal, 4), "unrealized": round(unr, 4),
+                             "equity": round(bal + unr, 4), "open_positions": len(marks)}])
     stx = auditor.stats()
     S.update({
         "data_sources_used": sorted(client.used),
