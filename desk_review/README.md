@@ -115,7 +115,7 @@ watchlist dışı) ve **temizlenmiş** örneklemin skorunu verir. Asıl başlang
 - Kapalı bayraklar varsayılanda birebir no-op. `confirm_1h` 200 bin rastgele mumda, BE tetikleyicisi 100 bin örnekte
   orijinalle aynı sonucu veriyor.
 - Orijinal masanın yazdığı `data/` klasörüyle yamalı kodun devam ettiği (geçiş) senaryosu hatasız çalışıyor.
-- İki tur bağımsız test yapıldı. İlk tur 22 kusur buldu (desk'te 10, araştırma betiklerinde 12), ikinci tur 5. Hepsi
+- İki tur bağımsız test yapıldı. İlk tur 22 bulgu çıkardı (desk'te 12, araştırma betiklerinde 10; birkaçı aynı sorunun tekrarı), ikinci tur 5. Hepsi
   düzeltildi ve yeniden doğrulandı.
 - `analyze_log.py` ve `replay_be.py` sentetik loglarda bağımsız hesaplamayla karşılaştırıldı (pandas 2.2 ve 3.0).
   `replay_be.py`'nin “P0 as logged” varyantı masanın kendi çıkışlarını işlem işlem birebir üretiyor.
